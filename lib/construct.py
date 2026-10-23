@@ -23,7 +23,9 @@ THREAD = re.compile(r"[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}\Z")
 
 
 class Refusal(Exception):
-    pass
+    def __init__(self, message, exit_code=2):
+        super().__init__(message)
+        self.exit_code = exit_code
 
 
 def require(condition, message):
@@ -471,14 +473,30 @@ def signed_range(c, gitdir, base, head):
         require(c.git(gitdir, "log", "-1", "--format=%G?", commit).strip() == "G", "introduced commit is not signed G")
 
 
+def check_review_base(c, gitdir, base, accepted):
+    if "base" not in accepted:
+        return  # Compatibility with existing exact-head verdicts.
+    reviewed = accepted["base"]
+    try:
+        require(isinstance(reviewed, str) and SHA.fullmatch(reviewed), "invalid review base")
+        c.git(gitdir, "merge-base", "--is-ancestor", reviewed, base)
+    except Refusal:
+        raise Refusal("review base is not an ancestor of the default branch; stacked history needs review", 8) from None
+
+
+def documentation_path(path):
+    return path.startswith("docs/") or bool(re.fullmatch(r"(?:README|CHANGELOG)\.(?:md|markdown|rst|txt|adoc)", path))
+
+
 def landing(c, args):
     require(TASK.fullmatch(args.task), "invalid task id")
     require(re.fullmatch(r"dev[1-9][0-9]*", args.producer) and re.fullmatch(r"rev[1-9][0-9]*", args.reviewer), "independent producer and reviewer required")
     require(c.identity(args.producer) != c.identity(args.reviewer), "reviewer must differ from producer")
-    verdict(args.verdict, args.head)
+    accepted = verdict(args.verdict, args.head)
     gitdir = repository(c, args.repo)
     with lock(c.state / "locks" / f"land-{args.repo}"):
         base = fetch_candidate(c, gitdir, args.repo, args.branch, args.head)
+        check_review_base(c, gitdir, base, accepted)
         c.git(gitdir, "merge-base", "--is-ancestor", base, args.head)
         signed_range(c, gitdir, base, args.head)
         remote = c.data["repos"][args.repo].get("github")
@@ -506,13 +524,14 @@ def landing(c, args):
         require(view == {"headRefOid": args.head, "baseRefName": base, "state": "OPEN"}, "PR moved after checks")
         # Re-fetch both refs, repeat all commit checks, and use a normal non-forced push.
         fetch_candidate(c, gitdir, args.repo, args.branch, args.head)
+        check_review_base(c, gitdir, base, accepted)
         c.git(gitdir, "merge-base", "--is-ancestor", base, args.head)
         signed_range(c, gitdir, base, args.head)
         c.call("gh", "pr", "review", pr, "--repo", remote, "--comment", "--body",
                f"Independent review B by {c.identity(args.reviewer)} accepted exact head {args.head}; all checks pass and introduced commits are signed. Landing by fast-forward.")
         c.git(gitdir, "push", "origin", f"{args.head}:refs/heads/{base}")
         try:
-            c.git(gitdir, "push", "origin", "--delete", args.branch)
+            c.git(gitdir, "push", "origin", f"--force-with-lease=refs/heads/{args.branch}:{args.head}", "--delete", args.branch)
         except Refusal:
             print("landed head is preserved; feature branch cleanup failed", file=sys.stderr)
         print(f"landed PR {pr} {args.head}")
@@ -528,7 +547,7 @@ def rebase(c, args):
         ancestor = c.git(gitdir, "merge-base", base, args.head).strip()
         upstream = set(c.git(gitdir, "diff", "--name-only", ancestor, base).splitlines())
         changed = set(c.git(gitdir, "diff", "--name-only", ancestor, args.head).splitlines())
-        shared = sorted(p for p in upstream & changed if not re.match(r"^(README|CHANGELOG)|^docs/|^\.task-board/", p))
+        shared = sorted(p for p in upstream & changed if not documentation_path(p))
         require(not shared, "Path B refused: shared non-documentation paths; return to producer")
         import tempfile
         import shutil
@@ -618,4 +637,4 @@ if __name__ == "__main__":
         sys.exit(main())
     except (Refusal, ValueError, KeyError, TypeError, OSError) as error:
         print(f"construct: {error}", file=sys.stderr)
-        sys.exit(2)
+        sys.exit(getattr(error, "exit_code", 2))

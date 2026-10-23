@@ -41,6 +41,7 @@ JSON or the last fenced `json` block in Markdown:
 {
   "verdict": "accepted",
   "head": "0123456789abcdef0123456789abcdef01234567",
+  "base": "abcdef0123456789abcdef0123456789abcdef0123",
   "findings": []
 }
 ```
@@ -50,6 +51,10 @@ A rejected review uses `changes_requested`. Findings hold `id`, `severity`
 P0/P1 block acceptance; P2 alone does not. The verdict must name the full exact
 40-character head. The orchestrator verifies the reviewer resource's provenance
 on the board; a local JSON file alone does not authenticate a reviewer.
+The optional `base` names the full commit the reviewed range starts from. When
+present, it must already be an ancestor of the default branch before landing;
+otherwise `land` exits 8. This prevents a stacked branch from carrying unreviewed
+commits below that range. Older verdicts without `base` remain compatible.
 
 ## Install and configuration
 
@@ -162,8 +167,10 @@ Orchestrator only. Requires an accepted exact-head verdict with no P0/P1 and
 distinct developer/reviewer roles. Fetches the named feature/default refs,
 requires the remote feature to equal the reviewed head, requires a nonempty
 range of commits whose signature status is `G`, and requires fast-forward
-ancestry. Creates or locates the PR, waits for hosted checks and reads structured
-check results. Every reported check must be successful; absent/unknown/failing,
+ancestry. If the verdict carries `base`, its full commit must be an ancestor of
+the fetched default branch; invalid, unknown or unlanded bases refuse with exit 8
+before hosting writes. This check repeats after the final fetch. Creates or
+locates the PR, waits for hosted checks and reads structured check results. Every reported check must be successful; absent/unknown/failing,
 pending, skipped and cancelled checks refuse landing. A successful structured
 PR read proving an empty `statusCheckRollup` is permitted only by explicit
 `allow_no_checks`; a CLI failure remains a refusal.
@@ -171,19 +178,22 @@ PR read proving an empty `statusCheckRollup` is permitted only by explicit
 It then verifies the PR's full head, base and open state, fetches both refs again,
 rechecks ancestry and every signature, posts a real comment review citing the
 independent reviewer, and uses a normal non-forced push of the exact signed head
-to the default branch. It then deletes the feature branch; a cleanup failure is
-reported without hiding the successful landing. Required GitHub protection
-still applies; the kit neither forges checks nor substitutes identities. If the
+to the default branch. It then deletes the feature branch using an atomic lease
+against the reviewed SHA. If another writer advanced the branch, cleanup preserves
+that newer ref and reports a warning without hiding the successful landing.
+Required GitHub protection still applies; the kit neither forges checks nor substitutes identities. If the
 default branch advances incompatibly, return to rebase/review. It never uses a
 platform merge/squash/rebase that rewrites the reviewed signed objects.
 
 ### `construct rebase REPO BRANCH ACCEPTED_HEAD NEW_BRANCH VERDICT`
 
 Orchestrator Path B. Validates the original exact accepted verdict and signatures,
-fetches current main, and refuses overlap on non-documentation paths. README,
-CHANGELOG, `docs/` and `.task-board/` paths follow the original documentation
-exception, but actual conflicts still refuse. In a disposable local clone it
-signed-cherry-picks the accepted commits onto current default, then requires
+fetches current main, and refuses overlap on non-documentation paths. The only
+exceptions are `docs/**` and exact root `README`/`CHANGELOG` filenames ending in
+`.md`, `.markdown`, `.rst`, `.txt` or `.adoc`; actual conflicts still refuse.
+Prefix siblings such as `README_engine.py`, extra extensions such as
+`README.md.py`, nested README files outside `docs/`, and `.task-board/` files
+receive no exception. In a disposable local clone it signed-cherry-picks the accepted commits onto current default, then requires
 `git range-diff` to contain only `=` entries and verifies every new signature.
 Only then does it push a new feature branch and write a carried verdict naming
 both old/new full heads and `path: B`. The original verdict is required and kept
@@ -227,6 +237,8 @@ The shell tests are negative-first: invalid config and a substituted latest
 request fail before valid neighboring controls pass. The same entry point runs
 local Python fixtures for FIFO/capacity/stale reclaim, worker locking and thread
 capture, environment isolation, exact event selection, signed landing and Path B.
+Landing regressions cover stacked review bases and concurrent branch cleanup;
+Path B controls pair shared executable prefix siblings with real documentation.
 Git repositories, signing keys, fake provider tools and board responses exist
 only in disposable test fixtures; no network service or real worker is launched.
 Narrowing mutants copy the kit, remove one gate at a time and require the intended
