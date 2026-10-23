@@ -10,3 +10,5 @@
 - Narrow Path B documentation exceptions to exact root doc filenames and docs/**.
 - Preserve concurrently advanced feature refs with atomic reviewed-head deletion leases.
 - Refuse landing verdicts whose optional review base is not on the default branch (exit 8).
+- Bind main updates atomically to the SHA used for final ancestry/signature checks;
+  refuse late main changes and skip feature cleanup with exit 9.

@@ -177,8 +177,14 @@ PR read proving an empty `statusCheckRollup` is permitted only by explicit
 
 It then verifies the PR's full head, base and open state, fetches both refs again,
 rechecks ancestry and every signature, posts a real comment review citing the
-independent reviewer, and uses a normal non-forced push of the exact signed head
-to the default branch. It then deletes the feature branch using an atomic lease
+independent reviewer, and pushes the exact signed head with an explicit lease
+against the default-branch SHA used for those final checks. The ancestry check
+still requires a fast-forward; the lease only makes the expected old SHA atomic.
+A subsequent main advance, rewind or deletion refuses with exit 9 and leaves the
+remote refs untouched by this landing. This includes main already reaching the
+accepted head: Git's up-to-date response does not authorize cleanup. Other main
+push refusals also return exit 9; revalidate before retrying.
+After a successful update it deletes the feature branch using an atomic lease
 against the reviewed SHA. If another writer advanced the branch, cleanup preserves
 that newer ref and reports a warning without hiding the successful landing.
 Required GitHub protection still applies; the kit neither forges checks nor substitutes identities. If the
@@ -237,7 +243,8 @@ The shell tests are negative-first: invalid config and a substituted latest
 request fail before valid neighboring controls pass. The same entry point runs
 local Python fixtures for FIFO/capacity/stale reclaim, worker locking and thread
 capture, environment isolation, exact event selection, signed landing and Path B.
-Landing regressions cover stacked review bases and concurrent branch cleanup;
+Landing regressions cover stacked review bases, late main changes, final
+fast-forward ancestry and concurrent branch cleanup;
 Path B controls pair shared executable prefix siblings with real documentation.
 Git repositories, signing keys, fake provider tools and board responses exist
 only in disposable test fixtures; no network service or real worker is launched.

@@ -229,6 +229,89 @@ if a[:2]==['pr','view'] and 'statusCheckRollup' not in a[-1]:
         self.assertEqual(self.git("--git-dir=" + str(self.root / "remote.git"), "rev-parse", "feature"), self.head)
         self.assertFalse(any(json.loads(line)[:2] == ["pr", "review"] for line in audit.read_text().splitlines()))
 
+    def move_main_during_hosting(self, old, new, *, after_checks=False):
+        command = [shutil.which("git"), "--git-dir=" + str(self.root / "remote.git"), "update-ref"]
+        command += ["-d", "refs/heads/main", old] if new is None else ["refs/heads/main", new, old]
+        trigger = "a[:2]==['pr','view'] and 'statusCheckRollup' not in a[-1]" if after_checks else "a[:2]==['pr','review']"
+        with open(self.cfg["tools"]["gh"], "a") as stream:
+            stream.write(f"""
+if {trigger}:
+ import os,subprocess
+ env={{k:v for k,v in os.environ.items() if k not in ('GIT_DIR','GIT_WORK_TREE')}}
+ subprocess.run({command!r},env=env,check=True)
+""")
+
+    def assert_feature_preserved(self):
+        self.assertEqual(self.git("--git-dir=" + str(self.root / "remote.git"), "rev-parse", "feature"), self.head)
+
+    # Claim: a main rewind during the posted review cannot restore an unreviewed
+    # parent or delete the feature. The same accepted range lands without the rewind.
+    def test_09_late_main_rewind(self):
+        parent = self.head
+        (self.seed / "reviewed.txt").write_text("reviewed tip\n")
+        self.git("add", "reviewed.txt", cwd=self.seed)
+        self.git("commit", "-S", "-m", "Reviewed tip", cwd=self.seed)
+        self.head = self.git("rev-parse", "HEAD", cwd=self.seed)
+        self.git("push", self.root / "remote.git", "feature", parent + ":refs/heads/main", cwd=self.seed)
+        self.gh(); self.move_main_during_hosting(parent, self.base)
+        result = self.land_with_base(parent, 9)
+        self.assertIn("default branch update refused", result.stderr)
+        self.assertEqual(self.remote_main(), self.base)
+        self.assert_feature_preserved()
+        self.git("--git-dir=" + str(self.root / "remote.git"), "update-ref", "refs/heads/main", parent, self.base)
+        self.gh(); self.land_with_base(parent, 0)
+        self.assertEqual(self.remote_main(), self.head)
+        self.assertEqual(self.git("--git-dir=" + str(self.root / "remote.git"), "branch", "--list", "feature"), "")
+
+    # Claim: even a late advance that remains an ancestor of the accepted head
+    # invalidates the expected main; revalidation without another move can land.
+    def test_09_late_main_advance(self):
+        advanced = self.head
+        (self.seed / "tip.txt").write_text("tip\n")
+        self.git("add", "tip.txt", cwd=self.seed)
+        self.git("commit", "-S", "-m", "Accepted tip", cwd=self.seed)
+        self.head = self.git("rev-parse", "HEAD", cwd=self.seed)
+        self.git("push", self.root / "remote.git", "feature", cwd=self.seed)
+        self.gh(); self.move_main_during_hosting(self.base, advanced)
+        self.land_with_base(self.base, 9)
+        self.assertEqual(self.remote_main(), advanced)
+        self.assert_feature_preserved()
+        self.gh(); self.land_with_base(self.base, 0)
+        self.assertEqual(self.remote_main(), self.head)
+
+    # Claim: a concurrent landing of the same head is still a main mismatch;
+    # Git's up-to-date response must not permit feature cleanup or report success.
+    def test_09_late_main_at_head(self):
+        self.move_main_during_hosting(self.base, self.head)
+        result = self.land_with_base(self.base, 9)
+        self.assertIn("default branch update refused", result.stderr)
+        self.assertEqual(self.remote_main(), self.head)
+        self.assert_feature_preserved()
+
+    # Claim: a late deletion of main refuses instead of recreating it or deleting
+    # the feature; test_09_late_main_rewind supplies the unchanged-main control.
+    def test_09_late_main_deletion(self):
+        self.move_main_during_hosting(self.base, None)
+        self.land_with_base(self.base, 9)
+        self.assertEqual(self.git("--git-dir=" + str(self.root / "remote.git"), "branch", "--list", "main"), "")
+        self.assert_feature_preserved()
+
+    # Claim: the final fetched main must still be an ancestor of the accepted
+    # head, even though the atomic lease could otherwise force a divergent push.
+    def test_09_final_ancestry(self):
+        self.git("switch", "main", cwd=self.seed)
+        (self.seed / "upstream.txt").write_text("divergent upstream\n")
+        self.git("add", "upstream.txt", cwd=self.seed)
+        self.git("commit", "-S", "-m", "Divergent upstream", cwd=self.seed)
+        advanced = self.git("rev-parse", "HEAD", cwd=self.seed)
+        self.git("push", self.root / "remote.git", "HEAD:refs/heads/staging", cwd=self.seed)
+        self.move_main_during_hosting(self.base, advanced, after_checks=True)
+        self.land_with_base(self.base, 2)
+        self.assertEqual(self.remote_main(), advanced)
+        self.assert_feature_preserved()
+        audit = (self.root / "gh-audit").read_text().splitlines()
+        self.assertFalse(any(json.loads(line)[:2] == ["pr", "review"] for line in audit))
+
 
 class PathBDocumentationTests(Fixture):
     def shared_path(self, filename, allowed):

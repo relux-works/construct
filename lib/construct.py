@@ -522,14 +522,23 @@ def landing(c, args):
         require(all(isinstance(check, dict) and check.get("bucket") == "pass" and check.get("state") == "SUCCESS" for check in checks), "checks are not all successful")
         view = json.loads(c.call("gh", "pr", "view", pr, "--repo", remote, "--json", "headRefOid,baseRefName,state"))
         require(view == {"headRefOid": args.head, "baseRefName": base, "state": "OPEN"}, "PR moved after checks")
-        # Re-fetch both refs, repeat all commit checks, and use a normal non-forced push.
+        # Bind every final check and the atomic update to the same fetched commit.
         fetch_candidate(c, gitdir, args.repo, args.branch, args.head)
-        check_review_base(c, gitdir, base, accepted)
-        c.git(gitdir, "merge-base", "--is-ancestor", base, args.head)
-        signed_range(c, gitdir, base, args.head)
+        expected_main = c.git(gitdir, "rev-parse", f"refs/heads/{base}").strip()
+        check_review_base(c, gitdir, expected_main, accepted)
+        c.git(gitdir, "merge-base", "--is-ancestor", expected_main, args.head)
+        signed_range(c, gitdir, expected_main, args.head)
         c.call("gh", "pr", "review", pr, "--repo", remote, "--comment", "--body",
                f"Independent review B by {c.identity(args.reviewer)} accepted exact head {args.head}; all checks pass and introduced commits are signed. Landing by fast-forward.")
-        c.git(gitdir, "push", "origin", f"{args.head}:refs/heads/{base}")
+        try:
+            pushed = c.git(gitdir, "push", "--porcelain", "origin",
+                           f"--force-with-lease=refs/heads/{base}:{expected_main}", f"{args.head}:refs/heads/{base}")
+            # Git skips lease validation when the remote already equals the head.
+            # Only an actual fast-forward update permits subsequent feature cleanup.
+            require(any(line.startswith(f" \t{args.head}:refs/heads/{base}\t") for line in pushed.splitlines()),
+                    "default branch was not advanced")
+        except Refusal:
+            raise Refusal("default branch update refused; revalidate before retrying", 9) from None
         try:
             c.git(gitdir, "push", "origin", f"--force-with-lease=refs/heads/{args.branch}:{args.head}", "--delete", args.branch)
         except Refusal:
