@@ -40,7 +40,7 @@ class Fixture(unittest.TestCase):
 
     def cli(self, *args, ok=True):
         result = subprocess.run([str(KIT / "bin/construct"), "--config", str(self.config), *map(str, args)],
-                                text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=self.env)
+                                text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=self.env, cwd=self.root)
         if ok:
             self.assertEqual(result.returncode, 0, result.stderr)
         else:

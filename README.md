@@ -171,7 +171,8 @@ PR read proving an empty `statusCheckRollup` is permitted only by explicit
 It then verifies the PR's full head, base and open state, fetches both refs again,
 rechecks ancestry and every signature, posts a real comment review citing the
 independent reviewer, and uses a normal non-forced push of the exact signed head
-to the default branch. The feature branch is retained. Required GitHub protection
+to the default branch. It then deletes the feature branch; a cleanup failure is
+reported without hiding the successful landing. Required GitHub protection
 still applies; the kit neither forges checks nor substitutes identities. If the
 default branch advances incompatibly, return to rebase/review. It never uses a
 platform merge/squash/rebase that rewrites the reviewed signed objects.
@@ -232,6 +233,8 @@ Narrowing mutants copy the kit, remove one gate at a time and require the intend
 test assertion failure, with no skipped/setup-error result. Test comments state
 the bounded claim. Fixtures and mutation copies go under `.temp/tests` or the
 explicit `CONSTRUCT_TEST_TMP`; published evidence must redact local paths.
+The hosted matrix installs zsh on its disposable Linux runner before the checks;
+macOS uses its existing shell. No host installation is part of the local test suite.
 
 | Tool | Use and entry point | Output |
 | --- | --- | --- |

@@ -11,7 +11,9 @@ class ConfigTests(Fixture):
                  ("room", "other", "invalid room"), ("root", "", "missing root"),
                  ("repos", {}, "repos must"), ("slot_poll_seconds", 0, "invalid slot_poll"),
                  ("sandbox", "anything", "invalid sandbox"), ("allow_no_checks", "yes", "invalid allow_no_checks")]
-        cases.extend([("roles", {}, "missing model"), ("tools", {"git": ""}, "invalid tools")])
+        cases.extend([("roles", {"dev": {"model": "", "effort": "high"},
+                                 "rev": {"model": "review-model", "effort": "medium"}}, "missing model"),
+                      ("roles", {}, "missing model"), ("tools", {"git": ""}, "invalid tools")])
         for key, value, error in cases:
             with self.subTest(key=key, value=value):
                 self.cfg = {**original, key: value}; self.save()

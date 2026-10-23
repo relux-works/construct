@@ -54,7 +54,7 @@ class SlotTests(Fixture):
             _, err = p.communicate(timeout=8); self.assertEqual(p.returncode, 0, err)
         self.assertTrue((self.root / "three").exists())
 
-    # Claim: the admitted child inherits the ticket descriptor, so controller death cannot release its lease early.
+    # Claim: the admitted child inherits the live ticket descriptor; this checks delivery, not a controller kill/restart.
     def test_11_child_lease(self):
         queue = self.root / "work/.construct-slots/queue"
         script = """import os,pathlib,sys

@@ -511,6 +511,10 @@ def landing(c, args):
         c.call("gh", "pr", "review", pr, "--repo", remote, "--comment", "--body",
                f"Independent review B by {c.identity(args.reviewer)} accepted exact head {args.head}; all checks pass and introduced commits are signed. Landing by fast-forward.")
         c.git(gitdir, "push", "origin", f"{args.head}:refs/heads/{base}")
+        try:
+            c.git(gitdir, "push", "origin", "--delete", args.branch)
+        except Refusal:
+            print("landed head is preserved; feature branch cleanup failed", file=sys.stderr)
         print(f"landed PR {pr} {args.head}")
 
 

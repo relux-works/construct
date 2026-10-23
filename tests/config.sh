@@ -4,6 +4,7 @@ set -eu
 KIT=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 CASE=$(mktemp -d "${CONSTRUCT_TEST_TMP:?}/shell-config.XXXXXX")
 trap 'rm -rf "$CASE"' EXIT HUP INT TERM
+cd "$CASE"
 python3 - "$KIT" "$CASE" <<'PY'
 import json,pathlib,sys
 kit,case=map(pathlib.Path,sys.argv[1:]);d=json.loads((kit/'construct.example.json').read_text())

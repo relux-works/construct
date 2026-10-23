@@ -50,6 +50,8 @@ GATES = [
     ("review needs the full exact head", WORK + "test_11_reviewer_exact_head"),
 ]
 LITERALS = [
+    ("landed branch cleanup", 'c.git(gitdir, "push", "origin", "--delete", args.branch)',
+     'None', LAND + "test_00_verdict_gates"),
     ("slot requires command", 'require(bool(command), "slot needs a command")',
      'if not command: return 0', SLOT + "test_00_exit_and_environment"),
     ("exact prompt selector", 'EVENT=posted, TASK=args.task', 'EVENT="$latest", TASK=args.task', WORK + "test_10_fresh_thread"),

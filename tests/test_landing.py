@@ -17,6 +17,7 @@ class LandingTests(Fixture):
             self.assertEqual(self.remote_main(), self.base)
         self.set_verdict(findings=[{"severity": "P2"}]); self.gh()
         self.land(); self.assertEqual(self.remote_main(), self.head)
+        self.assertEqual(self.git("--git-dir=" + str(self.root / "remote.git"), "branch", "--list", "feature"), "")
 
     # Claim: unknown/failed checks and PR-head drift leave main untouched; successful checks land.
     def test_01_hosted_check_gates(self):
@@ -126,3 +127,16 @@ sys.exit(rc)
         self.assertEqual(self.git("--git-dir=" + str(self.root / "remote.git"), "branch", "--list", "rebased"), "")
         self.cfg["tools"]["git"] = real_git; self.save()
         self.cli("rebase", "project", "feature", self.head, "rebased", self.verdict)
+
+    # Claim: cleanup failure is reported without hiding a successful signed landing; test_00 is the normal deletion control.
+    def test_06_cleanup_failure(self):
+        import shutil
+        real_git = shutil.which("git")
+        self.fake("git", f'''
+import subprocess,sys
+sys.exit(9 if '--delete' in sys.argv else subprocess.call([{real_git!r},*sys.argv[1:]]))
+''')
+        result = self.land()
+        self.assertIn("feature branch cleanup failed", result.stderr)
+        self.assertEqual(self.remote_main(), self.head)
+        self.assertEqual(self.git("--git-dir=" + str(self.root / "remote.git"), "rev-parse", "feature"), self.head)
