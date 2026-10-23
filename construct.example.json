@@ -1,0 +1,26 @@
+{
+  "root": "./work",
+  "lane": "project",
+  "identity_prefix": "build",
+  "room": "#project",
+  "board_config": "./task-board.config.json",
+  "git_env": "./agent-git-env",
+  "repos": {
+    "project": {"url": "git@github.com:example/project.git", "base": "main", "github": "example/project"}
+  },
+  "roles": {
+    "dev": {"model": "gpt-6.1-sol", "effort": "high"},
+    "rev": {"model": "gpt-6-astra", "effort": "medium"}
+  },
+  "slots": 3,
+  "tools": {"a2a": "a2a", "board": "task-board", "codex": "codex", "curator": "curator", "gh": "gh", "git": "git", "zsh": "zsh"},
+  "worker_path": "/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin",
+  "curator_runtime": "codex_cli",
+  "sandbox": "workspace-write",
+  "service_tier": "standard",
+  "memories": false,
+  "go": "",
+  "slot_poll_seconds": 5,
+  "idle_poll_seconds": 30,
+  "allow_no_checks": false
+}

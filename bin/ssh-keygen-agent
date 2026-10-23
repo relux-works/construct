@@ -1,0 +1,5 @@
+#!/bin/sh
+# Optional gpg.ssh.program wrapper. The git environment config supplies the socket.
+set -eu
+: "${CONSTRUCT_SIGNING_SOCKET:?set CONSTRUCT_SIGNING_SOCKET in the configured git environment}"
+SSH_AUTH_SOCK=$CONSTRUCT_SIGNING_SOCKET exec ssh-keygen "$@"
